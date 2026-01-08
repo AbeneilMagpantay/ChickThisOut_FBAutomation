@@ -1,0 +1,23 @@
+# Facebook Automation Dependencies
+# ChickThisOut Restaurant Bot
+
+# Facebook Graph API
+requests>=2.31.0
+
+# Google Gemini AI
+google-generativeai>=0.3.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Scheduling
+apscheduler>=3.10.4
+
+# Database
+sqlalchemy>=2.0.0
+
+# Logging
+colorlog>=6.8.0
+
+# Timezone handling
+pytz>=2024.1
