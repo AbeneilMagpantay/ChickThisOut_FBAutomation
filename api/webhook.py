@@ -1,17 +1,19 @@
 """
 Facebook Webhook Handler for Vercel Serverless
-Handles verification and incoming events from Facebook.
+Uses Flask for better Vercel compatibility.
 """
 import os
 import json
 import hmac
 import hashlib
 import logging
-from http.server import BaseHTTPRequestHandler
+from flask import Flask, request, jsonify
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
 
 # Environment variables
 FACEBOOK_VERIFY_TOKEN = os.getenv("FACEBOOK_VERIFY_TOKEN", "chickthisout_verify_2024")
@@ -24,19 +26,15 @@ FACEBOOK_PAGE_ID = os.getenv("FACEBOOK_PAGE_ID", "")
 def verify_signature(payload: bytes, signature: str) -> bool:
     """Verify that the payload came from Facebook."""
     if not FACEBOOK_APP_SECRET:
-        return True  # Skip verification if no secret set
-    
+        return True
     if not signature:
         return False
-    
     try:
-        # Facebook sends: sha256=<signature>
         expected = hmac.new(
             FACEBOOK_APP_SECRET.encode(),
             payload,
             hashlib.sha256
         ).hexdigest()
-        
         received = signature.replace("sha256=", "")
         return hmac.compare_digest(expected, received)
     except Exception as e:
@@ -53,7 +51,7 @@ def generate_ai_response(message: str) -> str:
         client = genai.Client(api_key=GEMINI_API_KEY)
         
         system_prompt = """You are a friendly customer service assistant for ChickThisOut, a restaurant in Canada.
-        
+
 Guidelines:
 - Be warm, professional, and helpful
 - Restaurant hours: 11 AM - 8 PM daily
@@ -132,23 +130,17 @@ def process_comment_event(entry: dict):
             item = value.get("item")
             verb = value.get("verb")
             
-            # Only process new comments (not edits or deletes)
             if item == "comment" and verb == "add":
                 comment_id = value.get("comment_id")
                 message = value.get("message", "")
                 from_id = value.get("from", {}).get("id", "")
                 
-                # Don't reply to our own comments
                 if from_id == FACEBOOK_PAGE_ID:
-                    logger.info("Skipping own comment")
                     return
                 
                 if comment_id and message:
                     logger.info(f"Processing comment: {message[:50]}...")
-                    
-                    # Generate AI response
                     ai_response = generate_ai_response(message)
-                    
                     if ai_response:
                         reply_to_comment(comment_id, ai_response)
 
@@ -159,10 +151,8 @@ def process_message_event(entry: dict):
     
     for event in messaging:
         sender_id = event.get("sender", {}).get("id", "")
-        recipient_id = event.get("recipient", {}).get("id", "")
         message_data = event.get("message", {})
         
-        # Don't process messages from self or echo messages
         if sender_id == FACEBOOK_PAGE_ID or message_data.get("is_echo"):
             return
         
@@ -170,78 +160,66 @@ def process_message_event(entry: dict):
         
         if message_text:
             logger.info(f"Processing message: {message_text[:50]}...")
-            
-            # Generate AI response
             ai_response = generate_ai_response(message_text)
-            
             if ai_response:
                 send_message(sender_id, ai_response)
 
 
-class handler(BaseHTTPRequestHandler):
-    """Vercel serverless handler for Facebook webhooks."""
+@app.route("/api/webhook", methods=["GET"])
+def verify_webhook():
+    """Handle webhook verification from Facebook."""
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
     
-    def do_GET(self):
-        """Handle webhook verification from Facebook."""
-        from urllib.parse import urlparse, parse_qs
-        
-        # Parse query parameters
-        query = parse_qs(urlparse(self.path).query)
-        
-        mode = query.get("hub.mode", [None])[0]
-        token = query.get("hub.verify_token", [None])[0]
-        challenge = query.get("hub.challenge", [None])[0]
-        
-        if mode == "subscribe" and token == FACEBOOK_VERIFY_TOKEN:
-            logger.info("Webhook verified successfully")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(challenge.encode())
-        else:
-            logger.warning(f"Webhook verification failed. Token: {token}")
-            self.send_response(403)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"Verification failed")
+    logger.info(f"Verification attempt - mode: {mode}, token: {token}")
     
-    def do_POST(self):
-        """Handle incoming webhook events from Facebook."""
-        try:
-            # Read the request body
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-            
-            # Verify signature (optional but recommended)
-            signature = self.headers.get("X-Hub-Signature-256", "")
-            if FACEBOOK_APP_SECRET and not verify_signature(body, signature):
-                logger.warning("Invalid signature")
-                self.send_response(403)
-                self.end_headers()
-                return
-            
-            # Parse the event
-            data = json.loads(body.decode("utf-8"))
-            object_type = data.get("object")
-            
-            logger.info(f"Received webhook: {object_type}")
-            
-            # Process entries
-            for entry in data.get("entry", []):
-                if object_type == "page":
-                    # Could be feed (comments) or messaging
-                    if "changes" in entry:
-                        process_comment_event(entry)
-                    if "messaging" in entry:
-                        process_message_event(entry)
-            
-            # Always return 200 quickly to Facebook
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode())
-            
-        except Exception as e:
-            logger.error(f"Webhook processing error: {e}")
-            self.send_response(500)
-            self.end_headers()
+    if mode == "subscribe" and token == FACEBOOK_VERIFY_TOKEN:
+        logger.info("Webhook verified successfully!")
+        return challenge, 200
+    else:
+        logger.warning(f"Verification failed. Expected: {FACEBOOK_VERIFY_TOKEN}, Got: {token}")
+        return "Verification failed", 403
+
+
+@app.route("/api/webhook", methods=["POST"])
+def handle_webhook():
+    """Handle incoming webhook events from Facebook."""
+    try:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if FACEBOOK_APP_SECRET and not verify_signature(request.data, signature):
+            return "Invalid signature", 403
+        
+        data = request.get_json()
+        object_type = data.get("object")
+        
+        logger.info(f"Received webhook: {object_type}")
+        
+        for entry in data.get("entry", []):
+            if object_type == "page":
+                if "changes" in entry:
+                    process_comment_event(entry)
+                if "messaging" in entry:
+                    process_message_event(entry)
+        
+        return jsonify({"status": "ok"}), 200
+        
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/", methods=["GET"])
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Health check endpoint."""
+    return jsonify({
+        "status": "healthy",
+        "service": "ChickThisOut Facebook Bot",
+        "version": "2.0.0"
+    })
+
+
+# For local testing
+if __name__ == "__main__":
+    app.run(debug=True, port=3000)

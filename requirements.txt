@@ -1,3 +1,4 @@
 # Facebook Webhook Dependencies (Vercel Serverless)
+flask>=3.0.0
 requests>=2.31.0
 google-genai>=1.0.0

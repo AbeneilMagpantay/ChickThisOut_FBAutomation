@@ -2,8 +2,11 @@
     "version": 2,
     "builds": [
         {
-            "src": "api/*.py",
-            "use": "@vercel/python"
+            "src": "api/webhook.py",
+            "use": "@vercel/python",
+            "config": {
+                "maxLambdaSize": "15mb"
+            }
         }
     ],
     "routes": [
@@ -13,11 +16,11 @@
         },
         {
             "src": "/api/health",
-            "dest": "/api/health.py"
+            "dest": "/api/webhook.py"
         },
         {
             "src": "/(.*)",
-            "dest": "/api/health.py"
+            "dest": "/api/webhook.py"
         }
     ]
 }
