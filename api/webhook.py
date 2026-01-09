@@ -209,6 +209,35 @@ def handle_webhook():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/privacy", methods=["GET"])
+@app.route("/api/privacy", methods=["GET"])
+def privacy():
+    """Privacy Policy page."""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Privacy Policy - ChickThisOut</title></head>
+    <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px;">
+        <h1>Privacy Policy</h1>
+        <p><strong>ChickThisOut Facebook Bot</strong></p>
+        <p>Last updated: January 2026</p>
+        
+        <h2>Information We Collect</h2>
+        <p>This bot only processes messages and comments sent to our Facebook Page to provide automated customer service responses.</p>
+        
+        <h2>How We Use Information</h2>
+        <p>Messages are processed in real-time to generate helpful responses. We do not store personal data permanently.</p>
+        
+        <h2>Data Sharing</h2>
+        <p>We do not sell or share your personal information with third parties.</p>
+        
+        <h2>Contact</h2>
+        <p>For questions, contact us through our Facebook Page: Chick This Out</p>
+    </body>
+    </html>
+    """, 200, {'Content-Type': 'text/html'}
+
+
 @app.route("/", methods=["GET"])
 @app.route("/api/health", methods=["GET"])
 def health():
