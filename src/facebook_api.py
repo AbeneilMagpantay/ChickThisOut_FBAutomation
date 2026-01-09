@@ -51,6 +51,15 @@ class FacebookAPI:
             response.raise_for_status()
             return response.json()
             
+        except requests.exceptions.HTTPError as e:
+            # Show the actual error from Facebook
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get("error", {}).get("message", str(e))
+                logger.error(f"Facebook API error: {error_msg}")
+            except:
+                logger.error(f"Facebook API request failed: {e}")
+            return None
         except requests.exceptions.RequestException as e:
             logger.error(f"Facebook API request failed: {e}")
             return None
@@ -168,10 +177,36 @@ class FacebookAPI:
     def verify_token(self) -> bool:
         """Verify that the access token is valid."""
         try:
-            info = self.get_page_info()
+            # Use 'me' endpoint - for page tokens this returns the page info
+            url = f"{self.base_url}/me"
+            params = {
+                "fields": "id,name",
+                "access_token": self.access_token
+            }
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            info = response.json()
+            
             if info and "id" in info:
-                logger.info(f"Token verified for page: {info.get('name', 'Unknown')}")
+                # Update page_id to match the token's page
+                actual_page_id = info.get("id")
+                page_name = info.get("name", "Unknown")
+                
+                if self.page_id != actual_page_id:
+                    logger.warning(f"Page ID mismatch! .env has '{self.page_id}' but token is for '{actual_page_id}'")
+                    logger.info(f"Auto-correcting to use page ID: {actual_page_id}")
+                    self.page_id = actual_page_id
+                
+                logger.info(f"Token verified for page: {page_name} (ID: {actual_page_id})")
                 return True
+            return False
+        except requests.exceptions.HTTPError as e:
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get("error", {}).get("message", str(e))
+                logger.error(f"Token verification failed: {error_msg}")
+            except:
+                logger.error(f"Token verification failed: {e}")
             return False
         except Exception as e:
             logger.error(f"Token verification failed: {e}")

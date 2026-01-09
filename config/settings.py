@@ -24,7 +24,7 @@ FACEBOOK_GRAPH_API_URL = "https://graph.facebook.com/v18.0"
 
 # Google Gemini Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-1.5-flash"  # Free tier model
+GEMINI_MODEL = "gemini-2.0-flash"  # Free tier model
 
 # Bot Settings
 CHECK_INTERVAL_SECONDS = int(os.getenv("CHECK_INTERVAL_SECONDS", 60))

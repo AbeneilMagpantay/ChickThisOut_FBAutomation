@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from config.settings import GEMINI_API_KEY, GEMINI_MODEL, PROMPTS_DIR
 
@@ -20,8 +21,8 @@ class AIResponder:
         self.api_key = GEMINI_API_KEY
         self.model_name = GEMINI_MODEL
         self.system_prompt = self._load_system_prompt()
-        self.model = None
-        self._initialize_model()
+        self.client = None
+        self._initialize_client()
     
     def _load_system_prompt(self) -> str:
         """Load the restaurant system prompt from file."""
@@ -42,39 +43,14 @@ class AIResponder:
         return """You are a friendly customer service assistant for ChickThisOut restaurant.
 Be helpful, warm, and professional. If you don't know something, say you'll have someone get back to them."""
     
-    def _initialize_model(self):
-        """Initialize the Gemini model."""
+    def _initialize_client(self):
+        """Initialize the Gemini client."""
         try:
-            genai.configure(api_key=self.api_key)
-            
-            # Configure generation settings
-            generation_config = {
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "top_k": 40,
-                "max_output_tokens": 256,
-            }
-            
-            # Safety settings - allow normal conversation
-            safety_settings = [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
-            ]
-            
-            self.model = genai.GenerativeModel(
-                model_name=self.model_name,
-                generation_config=generation_config,
-                safety_settings=safety_settings,
-                system_instruction=self.system_prompt,
-            )
-            
-            logger.info(f"Gemini model '{self.model_name}' initialized successfully")
-            
+            self.client = genai.Client(api_key=self.api_key)
+            logger.info(f"Gemini client initialized for model '{self.model_name}'")
         except Exception as e:
-            logger.error(f"Failed to initialize Gemini model: {e}")
-            self.model = None
+            logger.error(f"Failed to initialize Gemini client: {e}")
+            self.client = None
     
     def generate_response(
         self, 
@@ -93,23 +69,33 @@ Be helpful, warm, and professional. If you don't know something, say you'll have
         Returns:
             Generated response string or None if failed
         """
-        if not self.model:
-            logger.error("Model not initialized, cannot generate response")
+        if not self.client:
+            logger.error("Client not initialized, cannot generate response")
             return None
         
         try:
             # Build the prompt
             if message_type == "comment":
-                prompt = f"A customer left this comment on our Facebook post:\n\n\"{customer_message}\"\n\nWrite a friendly response."
+                user_prompt = f"A customer left this comment on our Facebook post:\n\n\"{customer_message}\"\n\nWrite a friendly response."
             else:
-                prompt = f"A customer sent this message to our Facebook page:\n\n\"{customer_message}\"\n\nWrite a helpful response."
+                user_prompt = f"A customer sent this message to our Facebook page:\n\n\"{customer_message}\"\n\nWrite a helpful response."
             
             # Add context if available
             if context:
-                prompt = f"Previous context:\n{context}\n\n{prompt}"
+                user_prompt = f"Previous context:\n{context}\n\n{user_prompt}"
             
-            # Generate response
-            response = self.model.generate_content(prompt)
+            # Combine system prompt with user prompt
+            full_prompt = f"{self.system_prompt}\n\n---\n\n{user_prompt}"
+            
+            # Generate response using new API
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=256,
+                )
+            )
             
             if response and response.text:
                 generated_text = response.text.strip()
@@ -148,3 +134,4 @@ Be helpful, warm, and professional. If you don't know something, say you'll have
 
 # Singleton instance
 ai_responder = AIResponder()
+
