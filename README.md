@@ -2,8 +2,6 @@
 
 A serverless automated responder for the ChickThisOut Facebook page. It handles comments and Messenger inquiries using Facebook Webhooks and Google Gemini AI.
 
-Deployed on Vercel (free tier) for 24/7 availability without server costs.
-
 ## Overview
 
 - **Real-time responses**: Uses webhooks to reply instantly to comments and messages.
